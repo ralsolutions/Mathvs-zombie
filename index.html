@@ -18,7 +18,7 @@
   }
   .pixel{ font-family:"Press Start 2P", ui-monospace, monospace; }
   .cabinet{
-    width:min(520px,100%); background:#1c1330; border:3px solid #000; border-radius:14px;
+    max-width:100%; background:#1c1330; border:3px solid #000; border-radius:14px;
     box-shadow:0 0 0 3px #3a2f5e, 0 18px 40px rgba(0,0,0,.55); overflow:hidden; position:relative;
   }
   .hud{ display:flex; align-items:center; gap:8px; padding:10px 12px; font-size:9px;
@@ -31,7 +31,7 @@
   .iconbtn:active{ transform:translateY(1px); } .iconbtn.off{ color:#6c638f; }
 
   .stage{ position:relative; background:#0b0817; line-height:0; }
-  canvas#game{ display:block; width:100%; height:auto; image-rendering:pixelated; touch-action:none; }
+  canvas#game{ display:block; image-rendering:pixelated; touch-action:none; margin:0 auto; }
   .scanlines{ position:absolute; inset:0; pointer-events:none;
     background:repeating-linear-gradient(rgba(0,0,0,0) 0 2px, rgba(0,0,0,.14) 2px 3px); mix-blend-mode:multiply; }
   .vignette{ position:absolute; inset:0; pointer-events:none; box-shadow:inset 0 0 55px 8px rgba(0,0,0,.55); }
@@ -158,7 +158,7 @@
   var $=function(id){return document.getElementById(id);};
   var cv=$("game"), ctx=cv.getContext("2d"); ctx.imageSmoothingEnabled=false;
 
-  var T=16, COLS=20, ROWS=15, W=COLS*T, H=ROWS*T;
+  var T=16, COLS=20, ROWS=13, W=COLS*T, H=ROWS*T, cabinet=null, curPortrait=null;
 
   /* ---------------- themes (one per chamber, cycled) ---------------- */
   var THEMES=[
@@ -172,14 +172,37 @@
   function theme(){ return THEMES[((st.table-2)%THEMES.length + THEMES.length)%THEMES.length]; }
 
   /* ---------------- map + props ---------------- */
-  var map=[], decor=[], stones=[], throwables=[], STAIR={x0:8,x1:11,y:0}; // staircase carved in top wall
-  var LEVERS=[ tc(2,3), tc(17,3), tc(2,11), tc(17,11) ];
-  var PLAYER_START=tc(10,8), ZOMB_START=tc(10,12);
+  var map=[], decor=[], stones=[], throwables=[], STAIR={x0:8,x1:11,y:0};
+  var LEVERS=[], PLAYER_START, ZOMB_START;
   function tc(tx,ty){ return {x:tx*T+T/2, y:ty*T+T/2}; }
+  // adapt the room to the device orientation: taller in portrait, wider in landscape
+  function applyOrientation(force){
+    var portrait = window.innerHeight > window.innerWidth*1.05;
+    if(force || portrait!==curPortrait){
+      curPortrait=portrait;
+      COLS = portrait?13:20; ROWS = portrait?20:13; W=COLS*T; H=ROWS*T;
+      cv.width=W; cv.height=H; ctx.imageSmoothingEnabled=false;
+      var cx=Math.floor(COLS/2), cyt=Math.floor(ROWS/2);
+      GUN_TILES=[[2,3],[COLS-3,3],[2,ROWS-4],[COLS-3,ROWS-4]];
+      START_TILE=[cx,cyt]; ZOMB_TILE=[cx,ROWS-3]; STAIR={x0:cx-2,x1:cx+1,y:0};
+      LEVERS=GUN_TILES.map(function(g){ return tc(g[0],g[1]); });
+      PLAYER_START=tc(cx,cyt); ZOMB_START=tc(cx,ROWS-3);
+      buildChamber(); resetPositions();
+    }
+    fit();
+  }
+  function fit(){
+    if(!cabinet) return;
+    var pad=12, availW=Math.max(120,window.innerWidth-pad), availH=Math.max(160,window.innerHeight-pad), chrome=76;
+    var scale=Math.min(availW/W, (availH-chrome)/H); if(!(scale>0)) scale=0.5;
+    scale=Math.min(scale, 760/W);   // cap so it doesn't get huge on big screens
+    var dw=Math.round(W*scale), dh=Math.round(H*scale);
+    cv.style.width=dw+"px"; cv.style.height=dh+"px"; cabinet.style.width=dw+"px";
+  }
 
   // per-chamber column setup: generated fresh each level, validated so every gun stays reachable
   function freshMap(){ var mm=[]; for(var y=0;y<ROWS;y++){ var r=[]; for(var x=0;x<COLS;x++) r.push((x===0||y===0||x===COLS-1||y===ROWS-1)?1:0); mm.push(r); } return mm; }
-  var GUN_TILES=[[2,3],[17,3],[2,11],[17,11]], START_TILE=[10,8], ZOMB_TILE=[10,12];
+  var GUN_TILES=[], START_TILE=[10,6], ZOMB_TILE=[10,10];
   function reachAll(m){
     var sx=START_TILE[0], sy=START_TILE[1]; if(m[sy][sx]===1) return false;
     var seen={}, q=[[sx,sy]], dirs=[[1,0],[-1,0],[0,1],[0,-1]]; seen[sx+","+sy]=1;
@@ -205,7 +228,7 @@
         m[sy][sx]=1; m[sy][sx+1]=1; sarco.push([sx,sy]); }
       if(reachAll(m)) return {pillars:pillars, sarco:sarco};
     }
-    return {pillars:[[7,5],[12,5]], sarco:[]};
+    return {pillars:[], sarco:[]};
   }
   var DECOR_TYPES=["skull","ankh","coins","crack","urn","web","glyph"];
 
@@ -634,8 +657,8 @@
       for(var kk=0;kk<6;kk++){ var a=kk*1.05; ctx.fillRect(sparkX+Math.cos(a)*4-1, sparkY+Math.sin(a)*4-1, 2, 2); } ctx.restore(); }
 
     // question banner
-    ctx.fillStyle="rgba(8,6,18,.85)"; ctx.fillRect(38,3,W-76,20);
-    ctx.strokeStyle=th.accent; ctx.globalAlpha=.5; ctx.strokeRect(38.5,3.5,W-77,19); ctx.globalAlpha=1;
+    ctx.fillStyle="rgba(8,6,18,.85)"; ctx.fillRect(8,3,W-16,20);
+    ctx.strokeStyle=th.accent; ctx.globalAlpha=.5; ctx.strokeRect(8.5,3.5,W-17,19); ctx.globalAlpha=1;
     ctx.fillStyle="#e8e0cf"; ctx.textAlign="center"; ctx.textBaseline="middle"; ctx.font='14px "VT323", monospace';
     ctx.fillText(qText+" = ?", W/2, 14);
     for(var p=0;p<HITS;p++){ ctx.fillStyle=p<st.correctCount?th.accent:"rgba(255,255,255,.15)"; ctx.fillRect(W/2-14+p*10,26,8,4); }
@@ -818,7 +841,11 @@
   });
 
   // boot idle scene
-  buildChamber(); resetPositions(); newQuestion(); updateHud();
+  cabinet=document.querySelector(".cabinet");
+  applyOrientation(true);            // sets grid + builds chamber + resets + sizes to screen
+  newQuestion(); updateHud();
+  window.addEventListener("resize", function(){ applyOrientation(false); });
+  window.addEventListener("orientationchange", function(){ setTimeout(function(){ applyOrientation(false); }, 120); });
   requestAnimationFrame(frame);
 })();
 </script>
